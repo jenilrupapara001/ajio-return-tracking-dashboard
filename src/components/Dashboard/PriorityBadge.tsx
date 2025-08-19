@@ -8,7 +8,7 @@ export const PriorityBadge: React.FC<PriorityBadgeProps> = ({ priority }) => {
   const getPriorityConfig = (priority: string) => {
     switch (priority) {
       case 'high':
-        return { color: 'bg-red-100 text-red-800 border-red-200', label: 'High', dot: 'bg-red-500' };
+        return { color: 'bg-red-100 text-red-900 border-red-200', label: 'High', dot: 'bg-red-500' };
       case 'medium':
         return { color: 'bg-yellow-100 text-yellow-800 border-yellow-200', label: 'Medium', dot: 'bg-yellow-500' };
       case 'low':

@@ -90,6 +90,21 @@ export const mockReturns: Return[] = [
     expectedDelivery: '2025-01-18',
     refundAmount: 1799,
     priority: 'low'
+  },
+    {
+    id: 'RET007',
+    orderId: 'AJO123456',
+    customerName: 'Akhil  Anandan',
+    customerEmail: 'akhil.anandan@email.com',
+    productName: 'Denim Jeans',
+    returnReason: 'Size mismatch',
+    status: 'delivered_to_warehouse',
+    shippingPartner: 'delhivery',
+    trackingNumber: 'BD12345678',
+    initiatedDate: '2025-08-17',
+    expectedDelivery: '2025-08-20',
+    refundAmount: 5999,
+    priority: 'high'
   }
 ];
 
@@ -106,7 +121,7 @@ export const mockShippingPartners: ShippingPartner[] = [
   {
     id: 'bluedart',
     name: 'Blue Dart',
-    logo: '📦',
+    logo: '🚚',
     activeReturns: 28,
     averageDeliveryTime: 4.5,
     successRate: 96.2,
