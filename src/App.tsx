@@ -1,71 +1,45 @@
-import React, { useState, useMemo } from 'react';
-import { BarChart3, Package, TrendingUp, Clock, DollarSign, Users, ArrowUpRight } from 'lucide-react';
+
+import React, { useState, useMemo, useEffect } from 'react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { LoginForm } from './components/Auth/LoginForm';
+import { Sidebar } from './components/Layout/Sidebar';
 import { MetricsCard } from './components/Dashboard/MetricsCard';
 import { ReturnsTable } from './components/Dashboard/ReturnsTable';
-import { SearchAndFilters } from './components/Dashboard/SearchAndFilters';
-import { ShippingPartners } from './components/Dashboard/ShippingPartners';
-import { ReturnDetailsModal } from './components/Dashboard/ReturnDetailsModal';
-import { mockReturns, mockMetrics, mockShippingPartners } from './data/mockData';
-import { Return, FilterOptions } from './types/dashboard';
+import { UploadPanel } from './components/Panels/UploadPanel';
+import { AnalyticsPanel } from './components/Panels/AnalyticsPanel';
+import { DatabasePanel } from './components/Panels/DatabasePanel';
+import { ReportsPanel } from './components/Panels/ReportsPanel';
+import { PerformancePanel } from './components/Panels/PerformancePanel';
+import { UsersPanel } from './components/Panels/UsersPanel';
+import { SettingsPanel } from './components/Panels/SettingsPanel';
+import { OrdersTable } from './components/Dashboard/OrdersTable';
+import { BarChart3, Package, TrendingUp, Clock, DollarSign } from 'lucide-react';
 
-function App() {
-  const [selectedReturn, setSelectedReturn] = useState<Return | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [filters, setFilters] = useState<FilterOptions>({
-    status: '',
-    partner: '',
-    priority: '',
-    dateRange: '',
-    searchQuery: ''
-  });
+const Dashboard: React.FC = () => {
+  const [activePanel, setActivePanel] = useState('dashboard');
+  const [dashboardMetrics, setDashboardMetrics] = useState<any>(null);
 
-  // Filter returns based on current filters
-  const filteredReturns = useMemo(() => {
-    return mockReturns.filter(returnItem => {
-      const matchesStatus = !filters.status || returnItem.status === filters.status;
-      const matchesPartner = !filters.partner || returnItem.shippingPartner === filters.partner;
-      const matchesPriority = !filters.priority || returnItem.priority === filters.priority;
-      const matchesSearch = !filters.searchQuery || 
-        returnItem.id.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
-        returnItem.orderId.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
-        returnItem.customerName.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
-        returnItem.productName.toLowerCase().includes(filters.searchQuery.toLowerCase());
+  useEffect(() => {
+    if (activePanel === 'dashboard') {
+      fetchDashboardMetrics();
+    }
+  }, [activePanel]);
 
-      return matchesStatus && matchesPartner && matchesPriority && matchesSearch;
-    });
-  }, [filters]);
-
-  const handleViewDetails = (returnItem: Return) => {
-    setSelectedReturn(returnItem);
-    setIsModalOpen(true);
-  };
-
-  const handleCloseModal = () => {
-    setSelectedReturn(null);
-    setIsModalOpen(false);
-  };
-
-  const handleRefresh = () => {
-    // In a real app, this would refetch data from the API
-    console.log('Refreshing data...');
-  };
-
-  const handleExport = () => {
-    // In a real app, this would export the data
-    console.log('Exporting data...');
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + "Return ID,Order ID,Customer Name,Product,Status,Partner,Amount\n"
-      + filteredReturns.map(r => 
-          `${r.id},${r.orderId},${r.customerName},${r.productName},${r.status},${r.shippingPartner},${r.refundAmount}`
-        ).join("\n");
-    
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "ajio_returns_export.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const fetchDashboardMetrics = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/dashboard/metrics`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setDashboardMetrics(data);
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard metrics:', error);
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -75,132 +49,221 @@ function App() {
     }).format(amount);
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
-              <Package className="h-5 w-5 text-white" />
-            </div>
+  const renderActivePanel = () => {
+    switch (activePanel) {
+      case 'upload':
+        return <UploadPanel />;
+      case 'analytics':
+        return <AnalyticsPanel />;
+      case 'database':
+        return <DatabasePanel />;
+      case 'orders':
+        return <OrdersTable />;
+      case 'returns':
+        return (
+          <div className="space-y-6">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Ajio Returns Dashboard</h1>
-              <p className="text-sm text-gray-500">Track and manage returns across shipping partners</p>
+              <h1 className="text-2xl font-bold text-gray-900">Returns Management</h1>
+              <p className="text-gray-600 mt-2">Track and manage all return requests</p>
+            </div>
+            <ReturnsTable />
+          </div>
+        );
+      case 'reports':
+        return (
+          <div className="space-y-6">
+            <ReportsPanel />
+          </div>
+        );
+      case 'performance':
+        return (
+          <div className="space-y-6">
+            <PerformancePanel />
+          </div>
+        );
+      case 'users':
+        return (
+          <div className="space-y-6">
+            <UsersPanel />
+          </div>
+        );
+      case 'settings':
+        return (
+          <div className="space-y-6">
+            <SettingsPanel />
+          </div>
+        );
+      default:
+        return (
+          <div className="space-y-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Dashboard Overview</h1>
+              <p className="text-gray-600 mt-2">Real-time insights from SQL Server database</p>
+            </div>
+            
+            {/* Metrics Cards */}
+            {dashboardMetrics && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <MetricsCard
+                  title="Total Returns"
+                  value={dashboardMetrics.orders.total}
+                  change={5.2}
+                  changeType="positive"
+                  icon={<Package className="h-6 w-6" />}
+                  color="blue"
+                />
+                <MetricsCard
+                  title="Delivered Orders"
+                  value={dashboardMetrics.orders.delivered}
+                  change={8.1}
+                  changeType="positive"
+                  icon={<Package className="h-6 w-6" />}
+                  color="green"
+                />
+                <MetricsCard
+                  title="Cancelled Orders"
+                  value={dashboardMetrics.orders.cancelled}
+                  change={2.3}
+                  changeType="positive"
+                  icon={<Package className="h-6 w-6" />}
+                  color="orange"
+                />
+                <MetricsCard
+                  title="Total Revenue"
+                  value={formatCurrency(dashboardMetrics.orders.totalRevenue)}
+                  change={12.5}
+                  changeType="positive"
+                  icon={<DollarSign className="h-6 w-6" />}
+                  color="purple"
+                />
+              </div>
+            )}
+
+            {/* Additional Metrics */}
+            {dashboardMetrics && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <MetricsCard
+                  title="Pre-Invoice Cancellations"
+                  value={dashboardMetrics.orders.preInvoiceCancellations}
+                  change={1.2}
+                  changeType="negative"
+                  icon={<Clock className="h-6 w-6" />}
+                  color="orange"
+                />
+                <MetricsCard
+                  title="Post-Invoice Cancellations"
+                  value={dashboardMetrics.orders.postInvoiceCancellations}
+                  change={0.8}
+                  changeType="positive"
+                  icon={<Clock className="h-6 w-6" />}
+                  color="red"
+                />
+                <MetricsCard
+                  title="Average Order Value"
+                  value={formatCurrency(dashboardMetrics.orders.avgOrderValue)}
+                  change={3.4}
+                  changeType="positive"
+                  icon={<DollarSign className="h-6 w-6" />}
+                  color="blue"
+                />
+              </div>
+            )}
+
+            {/* Quick Actions */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div>
+                <div className="bg-white rounded-xl border border-gray-200 p-6">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">System Status</h2>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                        <span className="font-medium text-green-900">SQL Server Database</span>
+                      </div>
+                      <span className="text-sm text-green-700">Connected</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                        <span className="font-medium text-blue-900">File Processing</span>
+                      </div>
+                      <span className="text-sm text-blue-700">Active</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
+                        <span className="font-medium text-purple-900">Real-time Updates</span>
+                      </div>
+                      <span className="text-sm text-purple-700">Enabled</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                {dashboardMetrics && dashboardMetrics.partners && (
+                  <div className="bg-white rounded-xl border border-gray-200 p-6">
+                    <h2 className="text-lg font-semibold text-gray-900 mb-4">Shipping Partners</h2>
+                    <div className="space-y-3">
+                      {dashboardMetrics.partners.map((partner: any, index: number) => (
+                        <div key={index} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
+                          <div>
+                            <p className="font-medium text-gray-900">{partner.name}</p>
+                            <p className="text-sm text-gray-600">{partner.totalOrders} orders</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-medium text-green-600">{partner.successRate}%</p>
+                            <p className="text-xs text-gray-500">Success Rate</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            Live Updates
-          </div>
-        </div>
-      </header>
+        );
+    }
+  };
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
-        {/* Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
-          <div className="xl:col-span-2">
-            <MetricsCard
-              title="Total Returns"
-              value={mockMetrics.totalReturns}
-              change={12}
-              changeType="positive"
-              icon={<Package className="h-6 w-6" />}
-              color="blue"
-            />
-          </div>
-          <div className="xl:col-span-2">
-            <MetricsCard
-              title="Pending Returns"
-              value={mockMetrics.pendingReturns}
-              change={5}
-              changeType="negative"
-              icon={<Clock className="h-6 w-6" />}
-              color="orange"
-            />
-          </div>
-          <div className="xl:col-span-2">
-            <MetricsCard
-              title="Success Rate"
-              value={`${mockMetrics.successRate}%`}
-              change={2.3}
-              changeType="positive"
-              icon={<TrendingUp className="h-6 w-6" />}
-              color="green"
-            />
-          </div>
-          <div className="xl:col-span-2">
-            <MetricsCard
-              title="Total Refund Amount"
-              value={formatCurrency(mockMetrics.totalRefundAmount)}
-              change={8}
-              changeType="positive"
-              icon={<DollarSign className="h-6 w-6" />}
-              color="purple"
-            />
-          </div>
-          <div className="xl:col-span-2">
-            <MetricsCard
-              title="Avg Processing Time"
-              value={`${mockMetrics.avgProcessingTime} days`}
-              change={1.2}
-              changeType="negative"
-              icon={<Clock className="h-6 w-6" />}
-              color="blue"
-            />
-          </div>
-          <div className="xl:col-span-2">
-            <MetricsCard
-              title="Completed Returns"
-              value={mockMetrics.completedReturns}
-              change={15}
-              changeType="positive"
-              icon={<BarChart3 className="h-6 w-6" />}
-              color="green"
-            />
-          </div>
-        </div>
-
-        {/* Search and Filters */}
-        <SearchAndFilters
-          filters={filters}
-          onFiltersChange={setFilters}
-          onRefresh={handleRefresh}
-          onExport={handleExport}
-        />
-
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Returns Table */}
-          <div className="lg:col-span-2">
-            <ReturnsTable
-              returns={filteredReturns}
-              onViewDetails={handleViewDetails}
-            />
-          </div>
-
-          {/* Shipping Partners */}
-          <div className="lg:col-span-1">
-            <ShippingPartners partners={mockShippingPartners} />
-          </div>
-        </div>
-
-        {/* Results Summary */}
-        <div className="text-center text-gray-500 text-sm">
-          Showing {filteredReturns.length} of {mockReturns.length} returns
-          {filters.searchQuery || filters.status || filters.partner || filters.priority ? (
-            <span> (filtered)</span>
-          ) : null}
-        </div>
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar activePanel={activePanel} onPanelChange={setActivePanel} />
+      
+      <main className="flex-1 p-8">
+        {renderActivePanel()}
       </main>
-
-      {/* Return Details Modal */}
-      <ReturnDetailsModal
-        returnItem={selectedReturn}
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-      />
     </div>
+  );
+};
+
+const AppContent: React.FC = () => {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginForm />;
+  }
+
+  return <Dashboard />;
+};
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
