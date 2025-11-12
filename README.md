@@ -109,7 +109,7 @@ Here are some ideas you might want to implement next:
 **Jenil Rupapara**  
 Frontend Developer | Automation Enthusiast  
 GitHub: [jenilrupapara001](https://github.com/jenilrupapara001)  
-Email: jenilrupapara001@gmail.com
+Email: jenilrupapara340@gmail.com
 
 ---
 
