@@ -1,4 +1,4 @@
-const delhiveryService = require('./delhiveryService');
+const reportProcessor = require('./reportProcessor');
 const DropshipOrder = require('../models/DropshipOrder');
 const RtvReturn = require('../models/RtvReturn');
 const statusMappingService = require('./statusMappingService');
@@ -43,39 +43,47 @@ class RealTimeUpdateService {
   async performUpdate() {
     try {
       console.log('Performing real-time update...');
-      
-      // Check if Delhivery service is enabled
-      if (!delhiveryService.isEnabled) {
-        console.log('⚠️ Delhivery API disabled - skipping real-time updates');
-        return;
-      }
-      
+
       // Get orders with AWB numbers that need updates
       const ordersToUpdate = await this.getOrdersNeedingUpdate();
-      
+
       if (ordersToUpdate.length === 0) {
         console.log('No orders need tracking updates');
         return;
       }
 
       console.log(`Updating tracking for ${ordersToUpdate.length} orders`);
-      
+
       // Extract AWB numbers
       const awbNumbers = ordersToUpdate.map(order => order.fwdAwb).filter(Boolean);
-      
+
       if (awbNumbers.length === 0) {
         console.log('No valid AWB numbers found');
         return;
       }
 
-      // Fetch tracking data from Delhivery
-      const trackingData = await delhiveryService.trackMultipleShipments(awbNumbers);
-      
+      // Fetch tracking data from Delhivery HTML
+      const htmlMap = await reportProcessor.fetchDelhiveryHtmlStatuses(awbNumbers);
+
+      // Process each AWB
+      const trackingData = [];
+      for (const awb of awbNumbers) {
+        const html = htmlMap[awb] || '';
+        const status = reportProcessor.mapDelhiveryHtmlToOrderStatus(html);
+        trackingData.push({
+          awbNumber: awb,
+          status: status,
+          originalStatus: status,
+          currentLocation: undefined,
+          lastUpdated: new Date()
+        });
+      }
+
       // Update orders with new tracking data
       await this.updateOrdersWithTrackingData(trackingData);
-      
+
       console.log(`Successfully updated ${trackingData.length} orders`);
-      
+
     } catch (error) {
       console.error('Error in real-time update:', error);
     }
@@ -149,29 +157,24 @@ class RealTimeUpdateService {
     await Promise.all(updatePromises);
   }
 
-  // Process webhook data from Delhivery
-  async processWebhookData(webhookData) {
-    try {
-      console.log('Processing webhook data:', webhookData);
-      
-      const processedData = delhiveryService.processWebhookData(webhookData);
-      
-      if (processedData.awbNumber) {
-        await this.updateOrdersWithTrackingData([processedData]);
-      }
-      
-      return { success: true, message: 'Webhook processed successfully' };
-    } catch (error) {
-      console.error('Error processing webhook data:', error);
-      throw error;
-    }
-  }
 
   // Get tracking status for specific AWB numbers
   async getTrackingStatus(awbNumbers) {
     try {
-      const trackingData = await delhiveryService.trackMultipleShipments(awbNumbers);
-      
+      const htmlMap = await reportProcessor.fetchDelhiveryHtmlStatuses(awbNumbers);
+
+      const trackingData = awbNumbers.map(awb => {
+        const html = htmlMap[awb] || '';
+        const status = reportProcessor.mapDelhiveryHtmlToOrderStatus(html);
+        return {
+          awbNumber: awb,
+          status: status,
+          originalStatus: status,
+          currentLocation: undefined,
+          lastUpdated: new Date()
+        };
+      });
+
       return {
         success: true,
         data: {

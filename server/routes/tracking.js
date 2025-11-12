@@ -528,13 +528,15 @@ router.get('/track/auto/:awb', authenticateToken, async (req, res) => {
     // Route to specific provider
     let result;
     if (carrier.includes('DELHIVERY')) {
-      const delhiveryService = require('../services/delhiveryService');
-      result = await delhiveryService.trackShipment(awb);
-      if (!result) return res.status(404).json({ error: 'No tracking data found' });
+      const map = await reportProcessor.fetchDelhiveryHtmlStatuses([awb]);
+      const html = map[awb] || '';
+      const status = reportProcessor.mapDelhiveryHtmlToOrderStatus(html);
+      const result = { success: true, status, currentLocation: undefined, lastUpdated: new Date(), source: 'delhivery-html', raw: { htmlLength: html.length } };
+      if (!result.success) return res.status(404).json({ error: 'No tracking data found' });
 
       // Persist to order/return as before
       try {
-        const mappedStatus = statusMappingService.mapOrderStatus(result.originalStatus || result.status);
+        const mappedStatus = statusMappingService.mapOrderStatus(result.status);
         await DropshipOrder.updateOne(
           { fwdAwb: awb },
           {
@@ -547,16 +549,18 @@ router.get('/track/auto/:awb', authenticateToken, async (req, res) => {
               trackingLastChecked: new Date(),
               trackingError: null,
               isTrackingActive: true
-            },
-            ...(Array.isArray(result.trackingHistory) && result.trackingHistory.length
-              ? { $push: { trackingHistory: { $each: result.trackingHistory.map(h => ({
-                    timestamp: new Date(h.timestamp || Date.now()),
-                    status: h.status,
-                    location: h.location,
-                    remarks: h.description || '' ,
-                    source: 'delhivery'
-                })) } } }
-              : {})
+            }
+          }
+        );
+        await RtvReturn.updateOne(
+          { trackingNumber: awb },
+          {
+            $set: {
+              deliveryStatus: mappedStatus,
+              currentLocation: result.currentLocation,
+              lastTrackingUpdate: new Date(),
+              trackingData: result
+            }
           }
         );
       } catch (e) { console.error('Auto track Delhivery DB error:', e); }
@@ -566,9 +570,9 @@ router.get('/track/auto/:awb', authenticateToken, async (req, res) => {
         awbNumber: awb,
         courier: 'DELHIVERY',
         status: result.status,
-        originalStatus: result.originalStatus,
+        originalStatus: result.status,
         currentLocation: result.currentLocation,
-        source: 'delhivery',
+        source: 'delhivery-html',
         response: result,
         linkedOrderId: order?._id || undefined,
         linkedReturnId: rtv?._id || undefined

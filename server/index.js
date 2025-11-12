@@ -532,80 +532,41 @@ app.put('/returns/:id', authenticateToken, async (req, res) => {
 app.get('/api/track-package/:orderId', authenticateToken, async (req, res) => {
   try {
     const { orderId } = req.params;
-    
+
     if (!orderId) {
       return res.status(400).json({ error: 'Order ID is required' });
     }
 
     console.log(`🔍 Tracking individual package: ${orderId}`);
-    
-    // First, find the order in database to get the AWB number
-    const DropshipOrder = require('./models/DropshipOrder');
-    const order = await DropshipOrder.findOne({ custOrderNo: orderId }).select('fwdAwb custOrderNo');
-    
-    if (!order || !order.fwdAwb) {
-      return res.status(404).json({ 
-        error: 'Order not found or no AWB number available',
+
+    // Use live tracking service which uses HTML scraping
+    const result = await liveTrackingService.getOrderTracking(orderId);
+
+    if (result.success && result.trackingData) {
+      // Format response for frontend
+      const response = {
+        awb: result.awbNumber,
+        status: result.trackingData.status,
+        currentLocation: result.trackingData.currentLocation || 'Unknown',
+        lastUpdate: result.trackingData.lastUpdated.toISOString(),
+        estimatedDelivery: null, // Not provided in new system
+        trackingHistory: [], // Not provided in new system
+        isRealData: true,
+        source: result.trackingData.source
+      };
+
+      res.json(response);
+    } else {
+      return res.status(404).json({
+        error: result.error || 'Package not found or no tracking data available',
         orderId
       });
     }
-
-    console.log(`📦 Found AWB ${order.fwdAwb} for Order ID ${orderId}`);
-    
-    // Get tracking data from Delhivery using AWB number
-    const delhiveryService = require('./services/delhiveryService');
-    const trackingData = await delhiveryService.trackShipment(order.fwdAwb);
-    
-    if (!trackingData) {
-      return res.status(404).json({ 
-        error: 'Package not found or no tracking data available',
-        orderId,
-        source: 'Delhivery API'
-      });
-    }
-
-    // Format response for frontend
-    const response = {
-      awb: trackingData.awbNumber,
-      status: trackingData.originalStatus || trackingData.status,
-      currentLocation: trackingData.currentLocation || 'Unknown',
-      lastUpdate: trackingData.lastUpdated.toISOString(),
-      estimatedDelivery: trackingData.estimatedDelivery?.toISOString(),
-      trackingHistory: trackingData.trackingHistory || [],
-      isRealData: true,
-      source: 'Delhivery'
-    };
-
-    // Update the order in database with latest tracking info
-    try {
-      const DropshipOrder = require('./models/DropshipOrder');
-      const statusMappingService = require('./services/statusMappingService');
-      const mappedStatus = statusMappingService.mapOrderStatus(trackingData.originalStatus);
-      
-      await DropshipOrder.updateOne(
-        { custOrderNo: orderId },
-        { 
-          $set: {
-            deliveryStatus: mappedStatus,
-            currentLocation: trackingData.currentLocation,
-            lastTrackingUpdate: new Date(),
-            trackingData: trackingData
-          }
-        }
-      );
-      
-      console.log(`✅ Updated order ${awbNumber} with status: ${mappedStatus}`);
-    } catch (dbError) {
-      console.error('Error updating database:', dbError);
-      // Don't fail the request if DB update fails
-    }
-
-    res.json(response);
   } catch (error) {
     console.error('❌ Track package error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to track package',
-      message: error.message 
+      message: error.message
     });
   }
 });
@@ -614,7 +575,7 @@ app.get('/api/track-package/:orderId', authenticateToken, async (req, res) => {
 app.post('/api/track-packages', authenticateToken, async (req, res) => {
   try {
     const { orderIds } = req.body;
-    
+
     if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
       return res.status(400).json({ error: 'Order IDs array is required' });
     }
@@ -624,74 +585,32 @@ app.post('/api/track-packages', authenticateToken, async (req, res) => {
     }
 
     console.log(`🔍 Tracking ${orderIds.length} packages:`, orderIds);
-    
-    const delhiveryService = require('./services/delhiveryService');
-    const DropshipOrder = require('./models/DropshipOrder');
+
+    // Use live tracking service bulk update
+    const bulkResults = await liveTrackingService.bulkUpdateTracking(orderIds);
+
     const results = [];
     const errors = [];
 
-    // Track each Order ID individually to get detailed results
-    for (const orderId of orderIds) {
-      try {
-        // First, find the order in database to get the AWB number
-        const order = await DropshipOrder.findOne({ custOrderNo: orderId }).select('fwdAwb custOrderNo');
-        
-        if (!order || !order.fwdAwb) {
-          errors.push({
-            orderId: orderId,
-            error: 'Order not found or no AWB number available'
-          });
-          continue;
-        }
-
-        const trackingData = await delhiveryService.trackShipment(order.fwdAwb);
-        
-        if (trackingData) {
-          results.push({
-            awb: trackingData.awbNumber,
-            status: trackingData.originalStatus || trackingData.status,
-            currentLocation: trackingData.currentLocation || 'Unknown',
-            lastUpdate: trackingData.lastUpdated.toISOString(),
-            estimatedDelivery: trackingData.estimatedDelivery?.toISOString(),
-            trackingHistory: trackingData.trackingHistory || [],
-            isRealData: true,
-            source: 'Delhivery'
-          });
-
-          // Update the order in database
-          try {
-            const DropshipOrder = require('./models/DropshipOrder');
-            const statusMappingService = require('./services/statusMappingService');
-            const mappedStatus = statusMappingService.mapOrderStatus(trackingData.originalStatus);
-            
-            await DropshipOrder.updateOne(
-              { custOrderNo: orderId },
-              { 
-                $set: {
-                  deliveryStatus: mappedStatus,
-                  currentLocation: trackingData.currentLocation,
-                  lastTrackingUpdate: new Date(),
-                  trackingData: trackingData
-                }
-              }
-            );
-          } catch (dbError) {
-            console.error(`Error updating database for ${orderId}:`, dbError);
-          }
-        } else {
-          errors.push({
-            orderId: orderId,
-            error: 'No tracking data available'
-          });
-        }
-      } catch (error) {
-        console.error(`Error tracking ${orderId}:`, error);
+    bulkResults.forEach(result => {
+      if (result.success && result.trackingData) {
+        results.push({
+          awb: result.awbNumber,
+          status: result.trackingData.status,
+          currentLocation: result.trackingData.currentLocation || 'Unknown',
+          lastUpdate: result.trackingData.lastUpdated.toISOString(),
+          estimatedDelivery: null,
+          trackingHistory: [],
+          isRealData: true,
+          source: result.trackingData.source
+        });
+      } else {
         errors.push({
-          orderId: orderId,
-          error: error.message
+          orderId: result.orderId,
+          error: result.error
         });
       }
-    }
+    });
 
     res.json({
       success: true,
@@ -703,82 +622,13 @@ app.post('/api/track-packages', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Track packages error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to track packages',
-      message: error.message 
+      message: error.message
     });
   }
 });
 
-// Test Delhivery API endpoint with Order ID
-app.get('/api/test-delhivery/:orderId', authenticateToken, async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    
-    if (!orderId) {
-      return res.status(400).json({ error: 'Order ID is required' });
-    }
-
-    console.log(`🧪 Testing Delhivery API for Order ID: ${orderId}`);
-    
-    // First, find the order in database to get the AWB number
-    const DropshipOrder = require('./models/DropshipOrder');
-    const order = await DropshipOrder.findOne({ custOrderNo: orderId }).select('fwdAwb custOrderNo');
-    
-    if (!order || !order.fwdAwb) {
-      return res.status(404).json({ 
-        error: 'Order not found or no AWB number available',
-        orderId
-      });
-    }
-
-    const delhiveryService = require('./services/delhiveryService');
-    const trackingData = await delhiveryService.trackShipment(order.fwdAwb);
-    
-    res.json({
-      orderId,
-      awbNumber: order.fwdAwb,
-      success: !!trackingData,
-      data: trackingData,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('❌ Test Delhivery API error:', error);
-    res.status(500).json({ 
-      error: 'Failed to test Delhivery API',
-      message: error.message 
-    });
-  }
-});
-
-// Test Delhivery API endpoint with direct AWB number
-app.get('/api/test-awb/:awbNumber', authenticateToken, async (req, res) => {
-  try {
-    const { awbNumber } = req.params;
-    
-    if (!awbNumber) {
-      return res.status(400).json({ error: 'AWB number is required' });
-    }
-
-    console.log(`🧪 Testing Delhivery API for AWB: ${awbNumber}`);
-    
-    const delhiveryService = require('./services/delhiveryService');
-    const trackingData = await delhiveryService.trackShipment(awbNumber);
-    
-    res.json({
-      awbNumber,
-      success: !!trackingData,
-      data: trackingData,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('❌ Test Delhivery API error:', error);
-    res.status(500).json({ 
-      error: 'Failed to test Delhivery API',
-      message: error.message 
-    });
-  }
-});
 
 // Analytics route
 app.get('/analytics', authenticateToken, async (req, res) => {
@@ -1350,11 +1200,9 @@ app.post('/users/:id/check-permission', authenticateToken, requirePermission('us
 
 // Import tracking routes
 const trackingRoutes = require('./routes/tracking');
-const webhookRoutes = require('./routes/webhooks');
 
 // Use tracking routes
 app.use('/api', trackingRoutes);
-app.use('/api/webhooks', webhookRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
